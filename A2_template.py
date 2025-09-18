@@ -20,10 +20,7 @@ HISTORY = []
 def fitness_function(movment_history):
     """The further from the center the better"""
 
-    start_pos = movment_history[0]
-    end_pos = movment_history[-1]
-
-    return np.linalg.norm(end_pos - start_pos)
+    return np.linalg.norm(movment_history[-1] - movment_history[0])
 
 def moving_model(model, data, to_track) -> None:
     """Function to make the model move"""
