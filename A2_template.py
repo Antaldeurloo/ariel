@@ -17,7 +17,14 @@ from ariel.body_phenotypes.robogen_lite.prebuilt_robots.gecko import gecko
 # Keep track of data / history
 HISTORY = []
 
-def fitness_function(movment_history):
+def training_model(number_of_generations = 10, population_size = 5):
+    """Training model is done here"""
+
+
+
+    return None
+
+def fitness_function(movment_history) -> float:
     """The further from the center the better"""
 
     return np.linalg.norm(movment_history[-1] - movment_history[0])
@@ -27,7 +34,6 @@ def moving_model(model, data, to_track) -> None:
     
 
     return None
-
 
 def random_move(model, data, to_track) -> None:
     """Generate random movements for the robot's joints.
@@ -144,6 +150,9 @@ def main():
     # This is called every time step to get the next action. 
     mujoco.set_mjcb_control(lambda m,d: random_move(m, d, to_track))
 
+    # Probably something like this to use your moving_model function
+    #mujoco.set_mjcb_control(lambda m,d: moving_model(m, d, to_track))
+
     # This opens a viewer window and runs the simulation with the controller you defined
     # If mujoco.set_mjcb_control(None), then you can control the limbs yourself.
     #viewer.launch(
@@ -158,6 +167,8 @@ def main():
         data=data,
         duration=10,
     )
+
+    print("Fitness:", fitness_function(HISTORY))
 
     show_qpos_history(HISTORY)
     # If you want to record a video of your simulation, you can use the video renderer.
