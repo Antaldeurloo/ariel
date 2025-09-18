@@ -17,11 +17,56 @@ from ariel.body_phenotypes.robogen_lite.prebuilt_robots.gecko import gecko
 # Keep track of data / history
 HISTORY = []
 
-def training_model(number_of_generations = 10, population_size = 5):
+def train_model(number_of_generations = 10, population_size = 5, training_duration = 10.0):
     """Training model is done here"""
 
+    population = generate_initial_population(population_size)
 
+    for _ in range(number_of_generations):
+        # Basically main() but for each generation
 
+        fitness_history = []
+
+        for individual in population:
+            # Evaluate each individual in the population
+            individual_fitness = run_individual_trial(individual, duration=training_duration)
+            fitness_history.append(individual_fitness)
+        
+        parents = select_parents(fitness_history, population) 
+        population = reproduce(parents, population_size)
+    
+    # Return best individual
+    return population[0]
+
+def generate_initial_population(population_size = 5):
+    """Generate initial population of random genomes"""
+
+    population = []
+    for _ in range(population_size):
+        # I'm assuming genome has 8 dimensions, i.e 8 joints
+        genome = np.random.rand(8)
+
+        population.append(genome)
+
+    return population
+
+#TODO
+def select_parents(fitness_history, population):
+    """Select parents for the next generation"""
+    parents = []
+
+    return parents
+
+#TODO
+def reproduce(parents, population_size):
+    """Reproduce new individuals from parents"""
+
+    new_population = []
+
+    return new_population
+
+#TODO
+def mutate(genome):
     return None
 
 def fitness_function(movment_history) -> float:
@@ -29,9 +74,40 @@ def fitness_function(movment_history) -> float:
 
     return np.linalg.norm(movment_history[-1] - movment_history[0])
 
-def moving_model(model, data, to_track) -> None:
+def run_individual_trial(genome, duration = 10.0) -> float:
+    """Run a single trial of the genome"""
+    mujoco.set_mjcb_control(None)
+    world = SimpleFlatWorld()
+    gecko_core = gecko()     
+    world.spawn(gecko_core.spec, spawn_position=[0, 0, 0])
+    model = world.spec.compile()
+    data = mujoco.MjData(model) # type: ignore
+    geoms = world.spec.worldbody.find_all(mujoco.mjtObj.mjOBJ_GEOM)
+    to_track = [data.bind(geom) for geom in geoms if "core" in geom.name]
+    # No need to change anything above this line (i think)
+    
+    HISTORY.clear()
+
+    mujoco.set_mjcb_control(lambda m,d: controller(m, d, to_track, genome))
+
+    # Running the simulation without viewer
+    simple_runner(
+        model=model,
+        data=data,
+        duration=duration,
+    )
+
+    print("Fitness:", fitness_function(HISTORY))
+
+    return fitness_function(HISTORY)
+
+#TODO
+def controller(model, data, to_track, genome) -> None:
     """Function to make the model move"""
     
+    num_joints = model.nu 
+
+
 
     return None
 
@@ -146,12 +222,21 @@ def main():
     geoms = world.spec.worldbody.find_all(mujoco.mjtObj.mjOBJ_GEOM)
     to_track = [data.bind(geom) for geom in geoms if "core" in geom.name]
 
+
+    # No need to change anything above this line in the main (i think)
+
+
+    HISTORY.clear() # I don't know why I re-use HISTORY, but whatever
+    best_genome = train_model(
+        number_of_generations = 5,
+        population_size = 5,
+        training_duration = 10.0, # Training duration refers to how long each individual is tested for in each trial. TODO: A better variable name?
+    )
+        
     # Set the control callback function
     # This is called every time step to get the next action. 
-    mujoco.set_mjcb_control(lambda m,d: random_move(m, d, to_track))
-
-    # Probably something like this to use your moving_model function
-    #mujoco.set_mjcb_control(lambda m,d: moving_model(m, d, to_track))
+    # Probably something like this to use our controller 
+    mujoco.set_mjcb_control(lambda m,d: controller(m, d, to_track, best_genome))
 
     # This opens a viewer window and runs the simulation with the controller you defined
     # If mujoco.set_mjcb_control(None), then you can control the limbs yourself.
@@ -159,14 +244,6 @@ def main():
     #    model=model,  # type: ignore
     #    data=data,
     #)
-
-
-    # Running the simulation without viewer
-    simple_runner(
-        model=model,
-        data=data,
-        duration=10,
-    )
 
     print("Fitness:", fitness_function(HISTORY))
 
@@ -187,5 +264,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
