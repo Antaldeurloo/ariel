@@ -9,6 +9,8 @@ from ariel.utils.renderers import video_renderer
 from ariel.utils.video_recorder import VideoRecorder
 from ariel.simulation.environments.simple_flat_world import SimpleFlatWorld
 
+from ariel.utils.runners import simple_runner
+
 # import prebuilt robot phenotypes
 from ariel.body_phenotypes.robogen_lite.prebuilt_robots.gecko import gecko
 
@@ -132,9 +134,17 @@ def main():
 
     # This opens a viewer window and runs the simulation with the controller you defined
     # If mujoco.set_mjcb_control(None), then you can control the limbs yourself.
-    viewer.launch(
-        model=model,  # type: ignore
+    #viewer.launch(
+    #    model=model,  # type: ignore
+    #    data=data,
+    #)
+
+
+    # Running the simulation without viewer
+    simple_runner(
+        model=model,
         data=data,
+        duration=10,
     )
 
     show_qpos_history(HISTORY)
