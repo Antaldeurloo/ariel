@@ -3,11 +3,15 @@ import numpy as np
 import mujoco
 from mujoco import viewer
 import matplotlib.pyplot as plt
+from typing import Literal, cast
+import random
 
 # Local libraries
 from ariel.utils.renderers import video_renderer
 from ariel.utils.video_recorder import VideoRecorder
 from ariel.simulation.environments.simple_flat_world import SimpleFlatWorld
+from ariel.ec.a005 import Crossover
+from ariel.ec.a000 import IntegerMutator
 
 from ariel.utils.runners import simple_runner
 
@@ -17,64 +21,108 @@ from ariel.body_phenotypes.robogen_lite.prebuilt_robots.gecko import gecko
 # Keep track of data / history
 HISTORY = []
 
-def train_model(number_of_generations = 10, population_size = 5, training_duration = 10.0):
+
+
+#TODO optimize evaluation
+def train_model(number_of_generations=1, population_size=5, training_duration=10, hio=(12,8,8)):
     """Training model is done here"""
 
-    population = generate_initial_population(population_size)
+    population = generate_initial_population(population_size, hio)
 
     for _ in range(number_of_generations):
         # Basically main() but for each generation
 
-        fitness_history = []
-
         for individual in population:
             # Evaluate each individual in the population
-            individual_fitness = run_individual_trial(individual, duration=training_duration)
-            fitness_history.append(individual_fitness)
-        
-        parents = select_parents(fitness_history, population) 
-        population = reproduce(parents, population_size)
+            if individual["fitness"] is None:
+                individual["fitness"] =  run_individual_trial(individual["genome"], hio, duration=training_duration)
+        parents, non_parents = select_parents(population)
+        population = reproduce(parents, non_parents, p_mutate, population_size)
+
     
     # Return best individual
-    return population[0]
+    pass
 
-def generate_initial_population(population_size = 5):
+def generate_initial_population(population_size, hio):
     """Generate initial population of random genomes"""
 
     population = []
     for _ in range(population_size):
-        # I'm assuming genome has 8 dimensions, i.e 8 joints
-        genome = np.random.rand(8)
+        genome = generate_genome(hio)
 
-        population.append(genome)
+        population.append({"genome": genome, "fitness": None})
 
     return population
 
 #TODO
-def select_parents(fitness_history, population):
-    """Select parents for the next generation"""
-    parents = []
+def select_parents(population):
+    """Select parents for the next generation through tournament selection"""
+    winners = []
+    losers = []
+    random.shuffle(population)
+    for idx in range(0, len(population)-1, 2):
+        ind_i = population[idx]
+        ind_j = population[idx + 1]
 
-    return parents
+        if ind_i["fitness"] > ind_j["fitness"]:
+            winners.append(ind_i)
+            losers.append(ind_j)
+        else:
+            winners.append(ind_j)
+            losers.append(ind_i)
+        
+    return winners, losers
 
 #TODO
-def reproduce(parents, population_size):
+def reproduce(parents, non_parents, p_mutate, population_size):
     """Reproduce new individuals from parents"""
 
     new_population = []
+    for idx in range(0, len(parents), 2):
+        parent_i_genotype = parents[idx]["genotype"]
+        parent_j_genotype = parents[idx+1]["genotype"]
+
+        # crossover
+        genotype_i, genotype_j = Crossover.one_point(
+            cast("list[float]", parent_i_genotype),
+            cast("list[float]", parent_j_genotype)
+        )
+
+        child_i = {"genotype": mutate(np.array(genotype_i), p_mutate), "fitness": None}
+        child_j = {"genotype": mutate(np.array(genotype_j), p_mutate), "fitness": None}
+        new_population.extend([parents[idx], parents[idx+1], child_i, child_j])
+        i = 0 
+        while len(new_population) < population_size:
+            new_population.append(non_parents[i])
+            i+=1
 
     return new_population
 
-#TODO
-def mutate(genome):
-    return None
 
-def fitness_function(movment_history) -> float:
+def mutate(genotype, p_mutate):
+    connections = genotype[::2]
+    mut_connections = random_swap(
+        individual=cast("list[int]", connections),
+        low=0,
+        high=1,
+        mutation_probability=p_mutate
+    )
+    genotype[::2] = np.array(mut_connections, dtype='float')
+    weights = genotype[1::2]
+    mut_weights = IntegerMutator.float_creep(
+        individual=cast("list[float]", weights),
+        span=1,
+        mutation_probability=p_mutate
+    )
+    genotype[1::2] = np.array(mut_weights)
+    return genotype
+
+def fitness_function(movement_history) -> float:
     """The further from the center the better"""
 
-    return np.linalg.norm(movment_history[-1] - movment_history[0])
+    return np.linalg.norm(movement_history[-1] - movement_history[0])
 
-def run_individual_trial(genome, duration = 10.0) -> float:
+def run_individual_trial(genome, hio, duration = 10.0) -> float:
     """Run a single trial of the genome"""
     mujoco.set_mjcb_control(None)
     world = SimpleFlatWorld()
@@ -88,7 +136,7 @@ def run_individual_trial(genome, duration = 10.0) -> float:
     
     HISTORY.clear()
 
-    mujoco.set_mjcb_control(lambda m,d: controller(m, d, to_track, genome))
+    mujoco.set_mjcb_control(lambda m,d: controller(m, d, to_track, genome, hio))
 
     # Running the simulation without viewer
     simple_runner(
@@ -97,19 +145,40 @@ def run_individual_trial(genome, duration = 10.0) -> float:
         duration=duration,
     )
 
-    print("Fitness:", fitness_function(HISTORY))
+    # print("Fitness:", fitness_function(HISTORY))
 
     return fitness_function(HISTORY)
 
+def sigmoid(x):
+    return (1/1+np.exp(-x))-0.5
+
+
+def generate_genome(hio):
+    hidden, input_nodes, output_nodes= hio
+    genome = np.array([[np.random.randint(2), np.random.randn()] for _ in range(hidden* (input_nodes + output_nodes))]).flatten()
+    return genome
+
+
+def get_weights(genome, hio):
+    hidden, input_nodes, output_nodes = hio
+    w1 = np.array([genome[i+1] if genome[i] else 0 for i in range(0, genome.size // 2, 2)]).reshape(input_nodes, hidden)
+    w2 = np.array([genome[i+1] if genome[i] else 0 for i in range(genome.size // 2, genome.size , 2)]).reshape(hidden, output_nodes)
+    return w1, w2
+
 #TODO
-def controller(model, data, to_track, genome) -> None:
+def controller(model, data, to_track, genome, hio) -> None:
     """Function to make the model move"""
-    
-    num_joints = model.nu 
-
-
-
+    w1, w2 = get_weights(genome, hio)
+    x = data.ctrl
+    z1 = x.dot(w1)
+    a1 = sigmoid(z1)
+    z2 = a1.dot(w2)
+    a2 = sigmoid(z2)
+    data.ctrl += a2 * 0.01 
+    data.ctrl = np.clip(data.ctrl, -np.pi/2, np.pi/2)
+    HISTORY.append(to_track[0].xpos.copy())
     return None
+
 
 def random_move(model, data, to_track) -> None:
     """Generate random movements for the robot's joints.
@@ -227,25 +296,26 @@ def main():
 
 
     HISTORY.clear() # I don't know why I re-use HISTORY, but whatever
+    hio = (5,8,8)
     best_genome = train_model(
-        number_of_generations = 5,
-        population_size = 5,
+        number_of_generations = 1,
+        population_size = 20,
         training_duration = 10.0, # Training duration refers to how long each individual is tested for in each trial. TODO: A better variable name?
+        hio=hio
     )
-        
     # Set the control callback function
     # This is called every time step to get the next action. 
     # Probably something like this to use our controller 
-    mujoco.set_mjcb_control(lambda m,d: controller(m, d, to_track, best_genome))
+    mujoco.set_mjcb_control(lambda m,d: controller(m, d, to_track, best_genome, hio))
 
     # This opens a viewer window and runs the simulation with the controller you defined
     # If mujoco.set_mjcb_control(None), then you can control the limbs yourself.
-    #viewer.launch(
-    #    model=model,  # type: ignore
-    #    data=data,
-    #)
+    viewer.launch(
+       model=model,  # type: ignore
+       data=data,
+    )
 
-    print("Fitness:", fitness_function(HISTORY))
+    # print("Fitness:", fitness_function(HISTORY))
 
     show_qpos_history(HISTORY)
     # If you want to record a video of your simulation, you can use the video renderer.
