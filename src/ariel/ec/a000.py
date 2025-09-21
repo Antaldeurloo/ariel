@@ -102,7 +102,7 @@ class IntegerMutator:
             size=shape,
             p=[mutation_probability, 1 - mutation_probability],
         )
-        new_genotype = np.where(mask, mutator, individual).astype(int).tolist()
+        new_genotype = np.where(mask, mutator, individual)
         return cast("Integers", new_genotype.astype(int).tolist())
 
     @staticmethod
