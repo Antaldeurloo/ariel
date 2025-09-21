@@ -158,12 +158,10 @@ def run_individual_trial(genome, config: Metadata) -> float:
     geoms = world.spec.worldbody.find_all(mujoco.mjtObj.mjOBJ_GEOM)
     to_track = [data.bind(geom) for geom in geoms if "core" in geom.name]
     # No need to change anything above this line (i think)
-    
-    HISTORY.clear()
-    deltas = [np.zeros(8)]
 
+    HISTORY.clear()
     mujoco.set_mjcb_control(
-        lambda m, d: controller(m, d, to_track, deltas, genome, config.hio)
+        lambda m, d: controller(m, d, to_track, genome, config.hio)
         )
 
     # Running the simulation without viewer
@@ -194,21 +192,24 @@ def get_weights(genome, hio):
     w2 = np.array([genome[i+1] if genome[i] else 0 for i in range(hidden*input_nodes*2 , genome.size , 2)]).reshape(hidden, output_nodes)
     return w1, w2
 
+def oscillator(t, weights):
+    frequencies = weights[:8] / 10
+    amplitudes = weights[8:16] * np.pi
+    offsets = weights[16:] * np.pi
+    return amplitudes * np.sin(2 * np.pi * frequencies * t) + offsets
 
-def controller(model, data, to_track, deltas, genome, hio) -> None:
+def controller(model, data, to_track, genome, hio) -> None:
     """Function to make the model move"""
     w1, w2 = get_weights(genome, hio)
-    x_pos = to_track[0].xpos.copy()
-    x = np.append(data.ctrl.copy(), np.append(x_pos, deltas[-1]))
+    x_pos = np.array([1])  # to_track[0].xpos.copy()
     
-    z1 = x.dot(w1)
+    z1 = x_pos.dot(w1)
     a1 = sigmoid(z1)
     z2 = a1.dot(w2)
     a2 = sigmoid(z2)-0.5
-    delta = a2 * np.pi/4
-    data.ctrl += delta
+    delta = oscillator(data.time, a2)
+    data.ctrl = delta
     data.ctrl = np.clip(data.ctrl, -np.pi/2, np.pi/2)
-    deltas.append(delta)
     HISTORY.append(to_track[0].xpos.copy())
     return None
 
@@ -268,26 +269,26 @@ def main():
     # You do not need to touch it.
     geoms = world.spec.worldbody.find_all(mujoco.mjtObj.mjOBJ_GEOM)
     to_track = [data.bind(geom) for geom in geoms if "core" in geom.name]
-    deltas = [np.zeros(8)]
 
     # No need to change anything above this line in the main (i think)
     config = Metadata(
-        hio=[12,19, 8],
+        hio=[8, 1, 24],
         duration=10.0,
-        n_generations=100,
-        size=40,
+        n_generations=50,
+        size=20,
         p_mut=0.5,
         offspring_multiplier=2
         )
 
     HISTORY.clear()  # I don't know why I re-use HISTORY, but whatever
     best_genome = train_model(config)
+    print(best_genome)
     # Set the control callback function
     # This is called every time step to get the next action. 
     # Probably something like this to use our controller 
     # best_genome = generate_genome((12,8,8))
     mujoco.set_mjcb_control(
-        lambda m, d: controller(m, d, to_track, deltas, best_genome, config.hio)
+        lambda m, d: controller(m, d, to_track, best_genome, config.hio)
         )
 
     # This opens a viewer window and runs the simulation with the controller you defined

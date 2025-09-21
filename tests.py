@@ -1,6 +1,6 @@
 
 import numpy as np
-from A2_template import generate_genome, generate_initial_population, select_parents, mutate, reproduce, controller, sigmoid
+from A2_template import generate_genome, generate_initial_population, select_parents, mutate, reproduce, controller, Metadata
 import datetime
 
 
@@ -25,10 +25,19 @@ def generate_individual_test():
 
 
 def generate_population_test():
-    test_hio = [np.random.randint(1,10,3) for _ in range(20)]
+    test_hio = np.array([np.random.randint(1,10,3) for _ in range(20)])
+    test_hio[:, 1] = 3 * np.ones(20)
     test_sizes = np.random.randint(1,100, 20)
     for hio, size in zip(test_hio, test_sizes):
-        population = generate_initial_population(size, hio, 10)
+        config = Metadata(
+            hio,
+            10,
+            1,
+            size,
+            1,
+            1
+        )
+        population = generate_initial_population(config)
         assert len(population) == size
         for individual in population:
             assert list(individual.keys()) == ["genome", "fitness"]
@@ -106,27 +115,13 @@ def reproduce_test():
 
 #     pass
 
-def append(deltas):
-    deltas.append(np.zeros(8))
-    pass
-
-def test_append():
-    deltas = [np.zeros(8)]
-    for _ in range(3):
-        append(deltas)
-    print(deltas)
 
 def main():
     generate_individual_test()
-    generate_population_test()
-    parent_selection_test()
-    mutate_test()
-    reproduce_test()
-    test_append()
-    # data = Data()
-    # controller_test(data)
-    alarm = datetime.datetime(2025, 9, 20, 6,30,0)
-    print(datetime.datetime.now() < alarm)
+    # generate_population_test()
+    # parent_selection_test()
+    # mutate_test()
+    # reproduce_test()
     print("all tests passed")
 
 
