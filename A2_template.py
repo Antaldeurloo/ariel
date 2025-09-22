@@ -24,8 +24,8 @@ HISTORY = []
 
 
 class Metadata:
-    def __init__(self, hio, duration, n_generations, size, p_mut, offspring_multiplier):
-        self.hio = hio
+    def __init__(self, dof, duration, n_generations, size, p_mut, offspring_multiplier):
+        self.dof = dof
         self.training_duration = duration
         self.n_generations = n_generations
         self.population_size = size
@@ -37,9 +37,10 @@ class Metadata:
 def train_model(config: Metadata):
     """Training model is done here"""
     with open("results.csv", "w", encoding="utf-8") as f:
-        f.write(f"Starting evolution with hio = {config.hio}\n")
+        f.write(f"Starting evolution with dof = {config.dof}\n")
 
     population = generate_initial_population(config)
+    fitness_history = []
 
     for i in range(config.n_generations):
         # Basically main() but for each generation
@@ -47,8 +48,9 @@ def train_model(config: Metadata):
         population = reproduce(parents, population, config)
         fitness_list = np.array([ind["fitness"] for ind in population])
         print(f'Generation {i}: hi: {np.max(fitness_list)}, lo: {np.min(fitness_list)}, mean: {np.mean(fitness_list)}')
-    fitness_list = np.array([ind["fitness"] for ind in population])
-    return population[np.argmax(fitness_list)]["genome"]
+        fitness_list = np.array([ind["fitness"] for ind in population])
+        fitness_history.append(fitness_list)
+    return population[np.argmax(fitness_list)]["genome"], np.array(fitness_history)
 
 
 def generate_initial_population(config: Metadata):
@@ -56,7 +58,7 @@ def generate_initial_population(config: Metadata):
 
     population = []
     for _ in range(config.population_size):
-        genome = generate_genome(config.hio)
+        genome = generate_genome(config.dof)
         population.append({"genome": genome, "fitness": None})
     for ind in population:
         ind["fitness"] = run_individual_trial(
@@ -122,28 +124,19 @@ def reproduce(parents, population, config: Metadata):
 
 def mutate(genotype, p_mutate):
     mut_genotype = genotype.copy()
-    connections = genotype[::2]
-    mut_connections = IntegerMutator.random_swap(
-        individual=cast("list[int]", connections),
-        low=0,
-        high=1,
-        mutation_probability=p_mutate
-    )
-    mut_genotype[::2] = np.array(mut_connections, dtype='float')
-    weights = genotype[1::2]
     mut_weights = IntegerMutator.float_creep(
-        individual=cast("list[float]", weights),
-        span=1,
+        individual=cast("list[float]", mut_genotype),
+        span=np.pi/4,
         mutation_probability=p_mutate
     )
-    mut_genotype[1::2] = np.array(mut_weights)
-    return mut_genotype
+    return np.array(mut_weights)
 
 
 def fitness_function(movement_history) -> float:
     """The further from the center the better"""
 
-    return np.linalg.norm(movement_history[-1] - movement_history[0])
+    # return np.linalg.norm(movement_history[-1] - movement_history[0])
+    return -1 * (movement_history[-1][1] - movement_history[0][1]) - abs(movement_history[-1][0] - movement_history[0][0])
 
 
 def run_individual_trial(genome, config: Metadata) -> float:
@@ -161,7 +154,7 @@ def run_individual_trial(genome, config: Metadata) -> float:
 
     HISTORY.clear()
     mujoco.set_mjcb_control(
-        lambda m, d: controller(m, d, to_track, genome, config.hio)
+        lambda m, d: controller(m, d, to_track, genome, config.dof)
         )
 
     # Running the simulation without viewer
@@ -176,38 +169,23 @@ def run_individual_trial(genome, config: Metadata) -> float:
     return fitness_function(HISTORY)
 
 
-def sigmoid(x):
-    return 1/(1+np.exp(-x))
-
-
-def generate_genome(hio):
-    hidden, input_nodes, output_nodes= hio
-    genome = np.array([[np.random.randint(2), np.random.randn()] for _ in range(hidden* (input_nodes + output_nodes))]).flatten()
+def generate_genome(dof):
+    genome = np.array([np.random.randn() for _ in range(dof)])
     return genome
 
 
-def get_weights(genome, hio):
-    hidden, input_nodes, output_nodes = hio
-    w1 = np.array([genome[i+1] if genome[i] else 0 for i in range(0, hidden*input_nodes*2 , 2)]).reshape(input_nodes, hidden)
-    w2 = np.array([genome[i+1] if genome[i] else 0 for i in range(hidden*input_nodes*2 , genome.size , 2)]).reshape(hidden, output_nodes)
-    return w1, w2
-
 def oscillator(t, weights):
-    frequencies = weights[:8] / 10
-    amplitudes = weights[8:16] * np.pi
-    offsets = weights[16:] * np.pi
-    return amplitudes * np.sin(2 * np.pi * frequencies * t) + offsets
+    frequencies = weights[:8]
+    amplitudes = weights[8:16]
+    offsets_y = weights[16:24]
+    offsets_x = weights[24:]
 
-def controller(model, data, to_track, genome, hio) -> None:
+    return amplitudes * np.sin(2 * np.pi * frequencies * (t - offsets_x)) + offsets_y
+
+
+def controller(model, data, to_track, genome, dof) -> None:
     """Function to make the model move"""
-    w1, w2 = get_weights(genome, hio)
-    x_pos = np.array([1])  # to_track[0].xpos.copy()
-    
-    z1 = x_pos.dot(w1)
-    a1 = sigmoid(z1)
-    z2 = a1.dot(w2)
-    a2 = sigmoid(z2)-0.5
-    delta = oscillator(data.time, a2)
+    delta = oscillator(data.time, genome)
     data.ctrl = delta
     data.ctrl = np.clip(data.ctrl, -np.pi/2, np.pi/2)
     HISTORY.append(to_track[0].xpos.copy())
@@ -272,36 +250,48 @@ def main():
 
     # No need to change anything above this line in the main (i think)
     config = Metadata(
-        hio=[8, 1, 24],
-        duration=10.0,
-        n_generations=50,
-        size=20,
+        dof=32,
+        duration=30.0,
+        n_generations=30,
+        size=26,
         p_mut=0.5,
         offspring_multiplier=2
         )
 
     HISTORY.clear()  # I don't know why I re-use HISTORY, but whatever
-    best_genome = train_model(config)
+    best_genome, fitness_hist = train_model(config)
+    np.savetxt('fitness_hist', fitness_hist)
+    np.savetxt('genome', best_genome)
+    std = np.std(fitness_hist, axis=0)
     print(best_genome)
     # Set the control callback function
     # This is called every time step to get the next action. 
     # Probably something like this to use our controller 
     # best_genome = generate_genome((12,8,8))
     mujoco.set_mjcb_control(
-        lambda m, d: controller(m, d, to_track, best_genome, config.hio)
+        lambda m, d: controller(m, d, to_track, best_genome, config.dof)
         )
 
     # This opens a viewer window and runs the simulation with the controller you defined
     # If mujoco.set_mjcb_control(None), then you can control the limbs yourself.
-    viewer.launch(
-       model=model,  # type: ignore
-       data=data,
-    )
-    print(config.num_evals)
+    # viewer.launch(
+    #    model=model,  # type: ignore
+    #    data=data,
+    # )
+    print(f'ended after {config.num_evals} fitness evaluations')
 
     # print("Fitness:", fitness_function(HISTORY))
 
-    show_qpos_history(HISTORY)
+    # show_qpos_history(HISTORY)
+    mean = np.mean(fitness_hist, axis=0)
+    upper = mean + std
+    lower = mean - std
+    plt.plot(np.arange(len(mean)), mean, '-b', label='mean')
+    plt.fill_between(np.arange(len(mean)), upper, lower, alpha=0.5, color='b')
+    plt.plot(np.arange(len(mean)), np.max(fitness_hist, axis=0), '-k', label='max fitness')
+    plt.legend()
+
+    plt.show()
     # If you want to record a video of your simulation, you can use the video renderer.
 
     # # Non-default VideoRecorder options
