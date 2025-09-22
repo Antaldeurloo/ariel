@@ -20,6 +20,7 @@ from ariel.body_phenotypes.robogen_lite.prebuilt_robots.gecko import gecko
 
 # Keep track of data / history
 HISTORY = []
+FITNESS = []
 
 # Global flag to track which simulation is running
 IS_RANDOM_RUN = False
@@ -99,7 +100,8 @@ def show_qpos_history(history:list):
 def fitness_function(movment_history) -> float:
     """The further from the center the better"""
     final_position = movment_history[-1]
-    return final_position[0]
+    # return final_position[0]
+    return -1 * (movment_history[-1][1] - movment_history[1][0]) - abs(movment_history[-1][0] - movment_history[0][0])**2
 
 # CPG-based controller
 def controller(model, data, cpg_params, step_count) -> None:
@@ -163,7 +165,6 @@ def run_individual_trial(individual, duration = 10.0) -> float:
     )
 
     fitness = fitness_function(HISTORY)
-    print("Fitness:", fitness)
 
     return (fitness,)
 
@@ -186,6 +187,11 @@ toolbox.register("select", tools.selTournament, tournsize=3)
 toolbox.register("mate", tools.cxBlend, alpha=0.5)
 toolbox.register("mutate", tools.mutGaussian, mu=0.0, sigma=0.2, indpb=0.05)
 
+stats = tools.Statistics(key=lambda ind: ind.fitness.values)
+stats.register('avg', np.mean)
+stats.register('std', np.std)
+stats.register('max', np.max)
+
 
 def train_model(number_of_generations = 10, population_size = 5, training_duration = 10.0):
     """Training model using the DEAP library"""
@@ -196,17 +202,19 @@ def train_model(number_of_generations = 10, population_size = 5, training_durati
     population = toolbox.population(n=population_size)
 
     # The DEAP's evolutionary loop.
-    algorithms.eaSimple(
+    pop, logbook = algorithms.eaSimple(
         population,
         toolbox,
         cxpb=0.5, # Probability of crossover
         mutpb=0.2, # Probability of mutation
         ngen=number_of_generations,
-        verbose=True
+        stats=stats,
+        verbose=False
     )
+    print(logbook)
 
     # Return the best individual from the final population
-    return tools.selBest(population, 1)[0]
+    return tools.selBest(population, 1)[0], logbook
 
 def main():
     """Main function to run the simulation with random movements."""
@@ -235,32 +243,57 @@ def main():
     # You do not need to touch it.
     geoms = world.spec.worldbody.find_all(mujoco.mjtObj.mjOBJ_GEOM)
     to_track = [data.bind(geom) for geom in geoms if "core" in geom.name]
+    individual, logbook = train_model(100, 30, 10)
+
+    avg, std, max = logbook.select('avg', 'std', 'max')
+    if not IS_RANDOM_RUN:
+        cpg_params = np.array(individual)
+    
+    step_count = 0
+    def control_with_cpg(m, d):
+        nonlocal step_count
+        if IS_RANDOM_RUN:
+            random_move(m, d, [data.geom("robot-core")])
+        else:
+            controller(m, d, cpg_params, step_count)
+            step_count += 1
+    
+    mujoco.set_mjcb_control(control_with_cpg)
 
     # Set the control callback function
     # This is called every time step to get the next action. 
-    mujoco.set_mjcb_control(lambda m,d: random_move(m, d, to_track))
 
     # This opens a viewer window and runs the simulation with the controller you defined
     # If mujoco.set_mjcb_control(None), then you can control the limbs yourself.
-    viewer.launch(
-        model=model,  # type: ignore
-        data=data,
-    )
+    # viewer.launch(
+    #     model=model,  # type: ignore
+    #     data=data,
+    # )
 
-    show_qpos_history(HISTORY)
+    # show_qpos_history(HISTORY)
     # If you want to record a video of your simulation, you can use the video renderer.
 
     # Non-default VideoRecorder options
-    # PATH_TO_VIDEO_FOLDER = "./__videos__"
-    # video_recorder = VideoRecorder(output_folder=PATH_TO_VIDEO_FOLDER)
+    PATH_TO_VIDEO_FOLDER = "./__videos__"
+    video_recorder = VideoRecorder(output_folder=PATH_TO_VIDEO_FOLDER)
 
-    # # Render with video recorder
-    # video_renderer(
-    #     model,
-    #     data,
-    #     duration=30,
-    #     video_recorder=video_recorder,
-    # )
+    # Render with video recorder
+    video_renderer(
+        model,
+        data,
+        duration=30,
+        video_recorder=video_recorder,
+    )
+    plt.figure(figsize=(6,5))
+    x = np.arange(len(avg))
+    plt.plot(x, avg, 'k', label='mean')
+    avg = np.array(avg)
+    std = np.array(std)
+    plt.fill_between(x, avg+std, avg-std, color='k', alpha=0.5, label='mean±std')
+    plt.plot(x, max, 'b', label='max')
+    plt.legend()
+    plt.savefig('chart.png')
+    plt.show()
 
 if __name__ == "__main__":
     main()
