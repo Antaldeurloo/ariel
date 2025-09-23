@@ -232,6 +232,8 @@ def run_evolution(mutpb, cxpb, iters, training_duration, population_size, num_ge
 
 
 def main():
+    np.random.seed(42)
+    random.seed()
     mutation_probabilities = [0.0, 0.2, 0.7]
     for mutpb in mutation_probabilities:
         run_evolution(
