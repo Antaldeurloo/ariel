@@ -52,9 +52,9 @@ def show_qpos_history(history: list):
     plt.show()
 
 
-def fitness_function(movment_history) -> float:
+def fitness_function(movement_history) -> float:
     """The further from the center the better"""
-    return -1 * (movment_history[-1][1] - movment_history[1][1]) - abs(movment_history[-1][0] - movment_history[0][0])**2
+    return -1 * (movement_history[-1][1] - movement_history[0][1]) - (movement_history[-1][0] - movement_history[0][0])**2
 
 
 # CPG-based controller
