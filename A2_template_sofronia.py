@@ -2,6 +2,7 @@
 import numpy as np
 import mujoco
 from mujoco import viewer
+import random
 import matplotlib.pyplot as plt
 
 # DEAP Toolbox
@@ -53,7 +54,7 @@ def show_qpos_history(history: list):
 
 def fitness_function(movment_history) -> float:
     """The further from the center the better"""
-    return -1 * (movment_history[-1][1] - movment_history[1][0]) - abs(movment_history[-1][0] - movment_history[0][0])**2
+    return -1 * (movment_history[-1][1] - movment_history[1][1]) - abs(movment_history[-1][0] - movment_history[0][0])**2
 
 
 # CPG-based controller
@@ -138,6 +139,7 @@ def run_evolution(mutpb, cxpb, iters, training_duration, population_size, num_ge
     plt.figure(figsize=(6,5))
     colors = ['tab:blue', 'tab:orange', 'tab:green']
     track = []
+    ind = None
     for i in range(iters):
         """Main function to run the simulation with random movements."""
         # Fitness strategy for maximization
@@ -183,6 +185,7 @@ def run_evolution(mutpb, cxpb, iters, training_duration, population_size, num_ge
         plt.plot(x, avg, color=colors[i], linestyle='dashed', label='mean run: {i}')
         plt.fill_between(x, avg+std, avg-std, color=colors[i], alpha=0.5, label=f'mean±std run: {i}')
         plt.plot(x, max_, color=colors[i], label='max run: {i}')
+        ind = best_individual
 
         if export_video:
             mujoco.set_mjcb_control(None)
@@ -228,23 +231,38 @@ def run_evolution(mutpb, cxpb, iters, training_duration, population_size, num_ge
     plt.plot(x, np.max(max_overall, axis=0), color=colors[i], label='max')
     plt.legend()
     plt.savefig(f'chart_{mutpb}_{cxpb}_averaged.png')
+    return ind
 
 
 
 def main():
     np.random.seed(42)
-    random.seed()
+    random.seed(42)
     mutation_probabilities = [0.0, 0.2, 0.7]
+    ind = None
     for mutpb in mutation_probabilities:
-        run_evolution(
+        ind = run_evolution(
             mutpb=mutpb,
             cxpb=0.5,
             iters=3,
             training_duration=10,
             population_size=20,
-            num_generations=50,
-            export_video=False
+            num_generations=20,
+            export_video=True
         )
+    mujoco.set_mjcb_control(None)
+    world = SimpleFlatWorld()
+    gecko_core = gecko()
+    world.spawn(gecko_core.spec, spawn_position=[0, 0, 0])
+    model = world.spec.compile()
+    data = mujoco.MjData(model)
+    cpg_params = np.array(ind)
+    mujoco.set_mjcb_control(lambda m, b: controller(m, b, cpg_params))
+    viewer.launch(
+        model=model,
+        data=data
+    )
+
 
 if __name__ == "__main__":
     main()
