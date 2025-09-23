@@ -137,6 +137,7 @@ def train_model(toolbox, stats, number_of_generations=10, population_size=5,
 def run_evolution(mutpb, cxpb, iters, training_duration, population_size, num_generations, export_video=True):
     plt.figure(figsize=(6,5))
     colors = ['tab:blue', 'tab:orange', 'tab:green']
+    track = []
     for i in range(iters):
         """Main function to run the simulation with random movements."""
         # Fitness strategy for maximization
@@ -174,13 +175,14 @@ def run_evolution(mutpb, cxpb, iters, training_duration, population_size, num_ge
             mutpb=mutpb,
             cxpb=cxpb
         )
-        avg, std, max = logbook.select('avg', 'std', 'max')
-        x = np.arange(len(avg))
-        plt.plot(x, avg, color=colors[i], linestyle='dashed', label='mean run: {i}')
+        avg, std, max_ = logbook.select('avg', 'std', 'max')
         avg = np.array(avg)
         std = np.array(std)
+        track.append([avg, std, max_])
+        x = np.arange(len(avg))
+        plt.plot(x, avg, color=colors[i], linestyle='dashed', label='mean run: {i}')
         plt.fill_between(x, avg+std, avg-std, color=colors[i], alpha=0.5, label=f'mean±std run: {i}')
-        plt.plot(x, max, color=colors[i], label='max run: {i}')
+        plt.plot(x, max_, color=colors[i], label='max run: {i}')
 
         if export_video:
             mujoco.set_mjcb_control(None)
@@ -205,17 +207,41 @@ def run_evolution(mutpb, cxpb, iters, training_duration, population_size, num_ge
     plt.legend()
     plt.savefig(f'chart_{mutpb}_{cxpb}.png')
 
+    track = np.array(track)
+    avg = track[:, 0]
+    std = track[:, 1]
+    max_overall = track[:, 2]
+    print(avg.shape, std.shape, max_overall.shape)
+    d0 = avg[0] - (avg[0] + avg[1] + avg[2])/3
+    d1 = avg[1] - (avg[0] + avg[1] + avg[2])/3
+    d2 = avg[2] - (avg[0] + avg[1] + avg[2])/3
+    sig_0 = std[0]
+    sig_1 = std[1]
+    sig_2 = std[2]
+    sig_123 = np.sqrt(population_size * (np.square(sig_0) + np.square(sig_1) + np.square(sig_2) + np.square(d0) + np.square(d1) + np.square(d2)) / (3 * population_size))
+    print(sig_123.shape)
+    avg_123 = (avg[0] + avg[1] + avg[2]) / 3
+    x = np.arange(len(avg_123))
+    plt.figure(figsize=(6,5))
+    plt.plot(x, avg_123, color=colors[i], linestyle='dashed', label='mean averaged')
+    plt.fill_between(x, avg_123+sig_123, avg_123-sig_123, color=colors[i], alpha=0.5, label=f'mean±std')
+    plt.plot(x, np.max(max_overall, axis=0), color=colors[i], label='max')
+    plt.legend()
+    plt.savefig(f'chart_{mutpb}_{cxpb}_averaged.png')
+
+
 
 def main():
-    mutation_probabilities = [0.2, 0.5, 0.7]
+    mutation_probabilities = [0.0, 0.2, 0.7]
     for mutpb in mutation_probabilities:
         run_evolution(
             mutpb=mutpb,
             cxpb=0.5,
             iters=3,
             training_duration=10,
-            population_size=10,
-            num_generations=50
+            population_size=20,
+            num_generations=50,
+            export_video=False
         )
 
 if __name__ == "__main__":
