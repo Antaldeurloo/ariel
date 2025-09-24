@@ -136,7 +136,7 @@ def train_model(toolbox, stats, number_of_generations=10, population_size=5,
     return tools.selBest(population, 1)[0], logbook
 
 def run_evolution(mutpb, cxpb, iters, training_duration, population_size, num_generations, export_video=True):
-    plt.figure(figsize=(6,5))
+    plt.figure(figsize=(5,4))
     colors = ['tab:blue', 'tab:orange', 'tab:green']
     track = []
     ind = None
@@ -225,10 +225,13 @@ def run_evolution(mutpb, cxpb, iters, training_duration, population_size, num_ge
     print(sig_123.shape)
     avg_123 = (avg[0] + avg[1] + avg[2]) / 3
     x = np.arange(len(avg_123))
-    plt.figure(figsize=(6,5))
+    plt.figure(figsize=(5,4))
     plt.plot(x, avg_123, color=colors[i], linestyle='dashed', label='mean averaged')
     plt.fill_between(x, avg_123+sig_123, avg_123-sig_123, color=colors[i], alpha=0.5, label=f'mean±std')
     plt.plot(x, np.max(max_overall, axis=0), color=colors[i], label='max')
+    plt.xlabel('generation')
+    plt.ylabel('fitness')
+    plt.tight_layout()
     plt.legend()
     plt.savefig(f'chart_{mutpb}_{cxpb}_averaged.png')
     return ind
